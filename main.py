@@ -13,6 +13,9 @@ pygame.display.set_caption("Platformer")
 kurukuru = pygame.mixer.Sound("Kurukuru.mp3")
 kururing = pygame.mixer.Sound("Kururing.mp3")
 nice = pygame.mixer.Sound("nice.mp3")
+boom = pygame.mixer.Sound("boom.mp3")
+hit = pygame.mixer.Sound("hit.mp3")
+scream = pygame.mixer.Sound("scream.mp3")
 WIDTH, HEIGHT = 1200, 800
 FPS = 60
 PLAYER_VEL = 5
@@ -161,7 +164,7 @@ class Player(pygame.sprite.Sprite):
         self.score = 0
         self.sprint = False
         self.cooldown = FPS 
-        self.can_shoot = False
+        self.can_shoot = True
     def jump(self):
         self.y_vel = -self.GRAVITY * 8
         self.animation_count = 0
@@ -190,7 +193,7 @@ class Player(pygame.sprite.Sprite):
         self.hit = True
         if(self.hit_count == 0):
             self.hp -= hp_lost
-            pygame.mixer.Sound.play(kurukuru)
+            pygame.mixer.Sound.play(hit)
 
     def move_left(self, vel):
         self.x_vel = -vel
@@ -275,13 +278,13 @@ class Object(pygame.sprite.Sprite):
         self.name = name
         self.status = True
         self.animated = False
-
+        self.breakable = False
     def draw(self, win, offset_x):
         win.blit(self.image, (self.rect.x - offset_x, self.rect.y))
 
 
 class Block(Object):
-    def __init__(self, x, y,type):
+    def __init__(self, x, y,type,breakable = False):
         size = 96
         super().__init__(x, y, size, size)
         block = get_block(size,type)
@@ -291,6 +294,7 @@ class Block(Object):
             self.type = "Block"
         self.image.blit(block, (0, 0))
         self.mask = pygame.mask.from_surface(self.image)
+        self.breakable = breakable
 
 class Fruit(Object):
     ANIMATION_DELAY = 3
@@ -360,12 +364,18 @@ class Bullet(Object):
         if self.status == True:
             self.move(self.dx, self.dy)
             
+            for obj in manager.objects:
+                if pygame.sprite.collide_mask(self, obj) and obj.breakable == True:
+                    self.status = False
+                    obj.status = False
+                    pygame.mixer.Sound.play(boom)
+                    break        
             for enemy in manager.enemies:
                 if pygame.sprite.collide_mask(self, enemy) and self.name == "Player_Particle":
                     self.status = False
                     enemy.hit = True
+                    pygame.mixer.Sound.play(boom)
                     break        
-                    
             sprite_index = (self.animation_count //
                             self.ANIMATION_DELAY) % len(self.sprites)
             self.image = self.sprites[sprite_index]
@@ -549,7 +559,7 @@ class Ghost(Enemy):
     def loop(self, fps):
         if self.rect.y > HEIGHT or self.hp <= 0:
             self.status = False
-            pygame.mixer.Sound.play(nice)
+            pygame.mixer.Sound.play(scream)
         if self.status == False:
             return
         
@@ -588,11 +598,11 @@ class Ghost(Enemy):
 
 def draw(window, bg_image, offset_x , display):
     window.blit(bg_image, (0,0))
-    for obj in manager.objects:
-        obj.draw(window, offset_x)
     for item in manager.items:
         if item.status == True:
             item.draw(window, offset_x)
+    for obj in manager.objects:
+        obj.draw(window, offset_x)
     for particle in manager.particles:
         if particle.status == True:
             particle.draw(window, offset_x)
@@ -706,7 +716,7 @@ def handle_move():
         elif obj and obj.name == "Ghost_Particle" and obj.status == True:
             manager.player.y_vel = -4
             manager.player.jump_count = 2
-            manager.player.make_hit(1)            
+            manager.player.make_hit(3)            
             obj.status = False
 def handle_enemy_move(enermy):
     collide_left = enemy_collide(enermy, -PLAYER_VEL )
@@ -743,11 +753,11 @@ def handle_items():
         col.status = False
         if manager.music:
             pygame.mixer.Sound.play(kururing)
-    elif col and col.name == "Checkpoint" and col.status == True:
+    elif col and col.name == "Checkpoint" and len(manager.enemies) == 0:
         col.animation_name = "No Flag"
         manager.game_status = 3
         if manager.music:
-            pygame.mixer.Sound.play(kururing)
+            pygame.mixer.Sound.play(nice)
 
 def play():
     clock = pygame.time.Clock()
@@ -759,7 +769,7 @@ def play():
 
     manager.items = [Fruit(700,HEIGHT - block_size * 3 , "Apple"),Fruit(1015,HEIGHT - block_size * 3 ,"Apple"),
                        Fruit(block_size*14+10,HEIGHT - block_size * 4 , "Bananas"), Fruit(block_size*-13 + 25,HEIGHT - block_size * 4 , "Cherries"),
-                       Checkpoint(57*block_size,HEIGHT-block_size*2-32)] + [Fruit(1950 + 300*i, HEIGHT - block_size*2, "Apple") for i in range(0,4)]
+                       Checkpoint(57*block_size,HEIGHT-block_size*2-32), Fruit(1950,HEIGHT - block_size * 2 , "Cherries")] + [Fruit(1950 + 300*i, HEIGHT - block_size*2, "Apple") for i in range(1,4)]
     manager.objects= [Block(i * block_size, HEIGHT - block_size,4) 
              for i in range(-1, 8)] + [Block(- block_size, HEIGHT - block_size*i, 2) 
                                         for i in range(2,4)] + [Block(i * block_size, HEIGHT - block_size,4)
@@ -770,9 +780,9 @@ def play():
                                         for i in range(1,6)] 
     manager.objects += [Block(14 * block_size, HEIGHT - block_size*3, 4),Block(-7* block_size, HEIGHT - block_size*3, 4),Block(-13* block_size, HEIGHT - block_size*3, 4), 
                 Block(7 * block_size, HEIGHT - block_size*2, 2), Block(37 * block_size, HEIGHT - block_size*2, 4), Block(32 * block_size, HEIGHT - block_size*2, 2),
-                Block(43 * block_size, HEIGHT - block_size*2, 2)]                                       
+                Block(43 * block_size, HEIGHT - block_size*2, 2), Block(1930, HEIGHT - block_size*2, 3,True)]                                       
     manager.particles = []
-    manager.enemies = [Ghost(4500,HEIGHT-block_size-50),AngryPig(600,HEIGHT-block_size-50),AngryPig(2850,HEIGHT-block_size-50)] 
+    manager.enemies = [Ghost(4500,HEIGHT-block_size-50),AngryPig(600,HEIGHT-block_size-50),AngryPig(2850,HEIGHT-block_size-50),AngryPig(4600,HEIGHT-block_size-50)] 
     manager.objects += [Fire(2100+300*i, HEIGHT - block_size - 64, 16, 32) for i in range(0,3)] + [Fire(300, HEIGHT - block_size - 64, 16, 32)]
     offset_x = 0
     scroll_area_width = 300
@@ -792,6 +802,9 @@ def play():
                     manager.player.jump()
                 if event.key == pygame.K_LCTRL and manager.player.can_shoot:
                     manager.player.shoot_player()
+        for obj in manager.objects:
+            if obj.status == False:
+                manager.objects.remove(obj)
         for obj in manager.particles:
             if obj.status == False:
                 manager.particles.remove(obj)
